@@ -1,0 +1,8 @@
+{
+  students {
+    firstName
+    lastName
+    email
+    gender
+  }
+}

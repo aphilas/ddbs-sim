@@ -1,0 +1,10 @@
+{
+	allStudents {
+    nodes {
+      firstName
+      lastName
+      email
+      gender
+    }
+  }
+}
