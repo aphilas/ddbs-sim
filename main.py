@@ -11,7 +11,18 @@ from gql.transport.aiohttp import AIOHTTPTransport
 from tabulate import tabulate
 
 INDENT_SIZE = 4
-REGISTERED_TABLES = {"students": ["firstName", "lastName", "email", "gender"]}
+REGISTERED_TABLES = {
+    "students": [
+        "firstName",
+        "lastName",
+        "email",
+        "gender",
+        "aidApproved",
+        "familyIncome",
+    ]
+}
+
+VF_FIELDS = ["aidApproved", "familyIncome"]
 
 
 class Site:
@@ -32,6 +43,38 @@ class Site:
         if result:
             return self.postprocess(result)
 
+    def query_aid(self):
+        if self.site_name != "postgres":
+            return
+
+        query_string = textwrap.dedent(
+            """
+                query getStudentAid {
+                    allStudentAids { 
+                        nodes {
+                            studentId
+                            aidApproved
+                            familyIncome
+                        }
+                    }
+                }
+                """
+        )
+
+        query = gql(query_string)
+        result = self.client.execute(query)
+
+        if result:
+            rows = result["allStudentAids"]["nodes"]
+            records = dict()
+
+            for row in rows:
+                id = row["studentId"]
+                row.pop("studentId")
+                records[id] = row
+
+            return records
+
     def generate_query(self, table, fields):
 
         if self.site_name == "sqlite":
@@ -40,7 +83,7 @@ class Site:
             fields_pad = 3
 
         fields_string = textwrap.indent(
-            "\n".join(fields), " " * (fields_pad * INDENT_SIZE)
+            "\n".join(["id", *fields]), " " * (fields_pad * INDENT_SIZE)
         )
 
         if self.site_name == "sqlite":
@@ -95,14 +138,38 @@ class Middleware:
         self.sites = sites
 
     def query(self, table, fields):
-        return list(
+        vf_fields = set(fields) & set(VF_FIELDS)
+
+        result = list(
             filter(
                 lambda v: bool,
                 list(
-                    itertools.chain(*[site.query(table, fields) for site in self.sites])
+                    itertools.chain(
+                        *[
+                            site.query(
+                                table,
+                                list(filter(lambda v: v not in VF_FIELDS, fields)),
+                            )
+                            for site in self.sites
+                        ]
+                    )
                 ),
             )
         )
+
+        if len(vf_fields):
+            postgres_site = list(
+                filter(lambda v: v.site_name == "postgres", self.sites)
+            )[0]
+
+            vf_result = postgres_site.query_aid()
+
+            for row in result:
+                rest = vf_result[row["id"]]
+                rest_subset = dict((k, rest.get(k)) for k in vf_fields)
+                row.update(rest_subset)
+
+        return result
 
 
 middleware = Middleware(
@@ -139,7 +206,10 @@ if __name__ == "__main__":
             print("No such field", field)
             exit(1)
 
-    result = middleware.query(args.table, args.field)
+    result = middleware.query(
+        args.table,
+        args.field,
+    )
 
     header = result[0].keys()
     rows = [row.values() for row in result]

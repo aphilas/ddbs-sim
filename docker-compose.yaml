@@ -1,31 +1,12 @@
 services:
   postgres:
     image: postgres:14-alpine
-    ports:
-      - 5432:5432
+    expose:
+      - 5432
     env_file:
       - .env
     volumes:
       - postgres_data:/var/lib/postgresql/data/
-
-  postgraphile:
-    image: graphile/postgraphile:4
-    ports:
-      - 5000:5000
-    command: '--connection postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:5432/${POSTGRES_DB} --schema public --watch'
-    depends_on:
-      - postgres
-  
-  pgadmin:
-    image: dpage/pgadmin4
-    ports:
-      - 5050:5050
-    env_file:
-      - postgres/pgadmin.env
-    depends_on:
-      - postgres
-    volumes:
-      - ./postgres/servers.json:/pgadmin4/servers.json
 
   sqlite:
     build: ./sqlite
@@ -33,15 +14,22 @@ services:
       - ./sqlite/data:/db
     working_dir: /db
     command: sqlite3 /db/students.db "select 1"
-    
-  adminer:
-    build: ./sqlite/adminer
-    volumes:
-      - ./sqlite/data:/db
+
+  mssql:
+    image: mcr.microsoft.com/mssql/server:2019-latest
+    env_file: .env
     ports:
-      - 8080:8080
+      - 1433:1433
+    volumes:
+      - mssql_data:/var/opt/mssql
+
+  postgraphile:
+    image: graphile/postgraphile:4
+    ports:
+      - 5000:5000
+    command: "--connection postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:5432/${POSTGRES_DB} --schema public --watch"
     depends_on:
-      - sqlite
+      - postgres
 
   tuql:
     build: ./sqlite/tuql
@@ -54,5 +42,33 @@ services:
     depends_on:
       - sqlite
 
+  pgadmin:
+    image: dpage/pgadmin4
+    ports:
+      - 5050:5050
+    env_file:
+      - postgres/pgadmin.env
+    depends_on:
+      - postgres
+    volumes:
+      - ./postgres/servers.json:/pgadmin4/servers.json
+
+  sqlite_adminer:
+    build: ./sqlite/adminer
+    volumes:
+      - ./sqlite/data:/db
+    ports:
+      - 8080:8080
+    depends_on:
+      - sqlite
+  
+  mssql_adminer:
+    image: adminer:4
+    ports:
+      - 8085:8080
+    depends_on:
+      - mssql
+  
 volumes:
   postgres_data:
+  mssql_data:
